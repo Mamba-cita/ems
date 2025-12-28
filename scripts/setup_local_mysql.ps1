@@ -18,13 +18,16 @@ foreach ($p in $commonPaths) {
 Write-Host "Using mysql command: $mysqlCmd"
 
 # Try to create database 'ter'
-$createDbCmd = "$mysqlCmd -u root -e \"CREATE DATABASE IF NOT EXISTS `\`ter\`` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\""
-Write-Host "Running: $createDbCmd"
+# Use a safe invocation to avoid complex quoting issues
+$mysqlPath = $mysqlCmd
+if ($mysqlPath -match '"(.+)"') { $mysqlPath = $Matches[1] }
+$createArgs = @('-u','root','-e','CREATE DATABASE IF NOT EXISTS `ter` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;')
+Write-Host "Running: $mysqlPath $createArgs"
 try {
-    iex $createDbCmd
+    & $mysqlPath @createArgs
     Write-Host "Database 'ter' created or already exists." -ForegroundColor Green
 } catch {
-    Write-Error "Failed to run mysql. Ensure XAMPP MySQL is running and that mysql.exe is available.\nError: $_"
+    Write-Error "Failed to run mysql. Ensure XAMPP MySQL is running and that mysql.exe is available.`nError: $_"
     exit 1
 }
 
@@ -42,4 +45,4 @@ if (-not (Test-Path $envFile)) {
 # Leave DB_PASSWORD empty for XAMPP default
 
 Write-Host "Set DB_DATABASE=ter and DB_USERNAME=root in .env"
-Write-Host "Next steps: run 'composer install', 'php artisan key:generate', and 'php artisan migrate'."}```
+Write-Host "Next steps: run 'composer install', 'php artisan key:generate', and 'php artisan migrate'."
