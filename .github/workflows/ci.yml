@@ -81,12 +81,40 @@ jobs:
 
       - name: Stop Laravel server (Linux)
         if: matrix.os == 'ubuntu-latest' && always()
-        run: kill $(cat .server.pid) || true
+        run: |
+          # Look for PID files in known locations and kill the process if PID found
+          set -euo pipefail
+          for pidfile in .server.pid backend/.server.pid backend-skel/.server.pid; do
+            if [ -f "$pidfile" ]; then
+              pid=$(cat "$pidfile" 2>/dev/null || true)
+              if [ -n "$pid" ]; then
+                echo "Killing PID $pid (from $pidfile)";
+                kill "$pid" || true;
+              fi
+              rm -f "$pidfile" || true;
+            fi
+          done || true
 
       - name: Stop Laravel server (Windows)
         if: matrix.os == 'windows-latest' && always()
         shell: pwsh
-        run: .\scripts\stop_laravel_server.ps1 -Port 8000
+        run: |
+          # PowerShell: check common PID file locations and stop process if found
+          $candidates = @('.server.pid', 'backend\.server.pid', 'backend-skel\.server.pid')
+          foreach ($f in $candidates) {
+            if (Test-Path $f) {
+              try {
+                $pid = Get-Content $f -ErrorAction Stop | Select-Object -First 1
+                if ($pid) {
+                  Write-Output "Stopping PID $pid from $f"
+                  Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+                }
+              } catch {
+                Write-Output "Could not read or stop process for $f: $_"
+              }
+              Remove-Item $f -ErrorAction SilentlyContinue
+            }
+          }
 
       - name: Upload coverage artifact
         if: always()
