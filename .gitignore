@@ -1,0 +1,22 @@
+# Laravel .gitignore (simplified)
+/vendor/
+/node_modules/
+/.env
+/.idea/
+/.vscode/
+/public/storage
+/storage/*.key
+/storage/framework/cache/data
+/storage/framework/sessions
+/storage/framework/views
+/storage/logs
+Homestead.json
+Homestead.yaml
+/.phpunit.result.cache
+.phpunit.result.cache
+.phpunit.cache
+npm-debug.log
+yarn-error.log
+.DS_Store
+.env.local
+.env.*.local

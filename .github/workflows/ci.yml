@@ -1,0 +1,102 @@
+name: Laravel CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: laravel_db
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent" --health-interval=10s --health-timeout=5s --health-retries=3
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: ter
+      DB_USERNAME: root
+      DB_PASSWORD: ''
+      APP_ENV: testing
+      APP_DEBUG: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: mbstring, pdo_mysql, xml, bcmath, curl
+
+      - name: Get composer cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: Install composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Copy .env (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: cp .env.example .env
+
+      - name: Copy .env (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: Copy-Item .env.example .env -Force
+
+      - name: Start Laravel server (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: php artisan serve --host=127.0.0.1 --port=8000 >/dev/null 2>&1 & echo $! > .server.pid
+
+      - name: Start Laravel server (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: .\scripts\start_laravel_server.ps1 -Host 127.0.0.1 -Port 8000 -ServerPath '.'
+
+      - name: Generate app key and migrate
+        run: |
+          php artisan key:generate
+          php artisan migrate --force
+
+      - name: Run tests with coverage
+        run: php artisan test --coverage --no-interaction --parallel
+
+      - name: Stop Laravel server (Linux)
+        if: matrix.os == 'ubuntu-latest' && always()
+        run: kill $(cat .server.pid) || true
+
+      - name: Stop Laravel server (Windows)
+        if: matrix.os == 'windows-latest' && always()
+        shell: pwsh
+        run: .\scripts\stop_laravel_server.ps1 -Port 8000
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage/
+
+      - name: Upload coverage to Codecov
+        if: github.event_name != 'pull_request' && env.CODECOV_TOKEN != ''
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage/clover.xml
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
