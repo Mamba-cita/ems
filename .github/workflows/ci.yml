@@ -13,7 +13,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: backend-skel
+        working-directory: backend
     services:
       mysql:
         image: mysql:8.0
@@ -84,7 +84,7 @@ jobs:
         run: |
           # Look for PID files in known locations and kill the process if PID found
           set -euo pipefail
-          for pidfile in .server.pid backend/.server.pid backend-skel/.server.pid; do
+          for pidfile in .server.pid backend/.server.pid; do
             if [ -f "$pidfile" ]; then
               pid=$(cat "$pidfile" 2>/dev/null || true)
               if [ -n "$pid" ]; then
