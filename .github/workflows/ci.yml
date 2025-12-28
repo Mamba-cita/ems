@@ -100,7 +100,7 @@ jobs:
         shell: pwsh
         run: |
           # PowerShell: check common PID file locations and stop process if found
-          $candidates = @('.server.pid', 'backend\.server.pid', 'backend-skel\.server.pid')
+          $candidates = @('.server.pid', 'backend\.server.pid')
           foreach ($f in $candidates) {
             if (Test-Path $f) {
               try {
