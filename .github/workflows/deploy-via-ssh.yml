@@ -1,0 +1,102 @@
+name: Deploy to Server via SSH
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    name: SSH Deploy
+    environment: production
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.8.1
+        with:
+          ssh-private-key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+
+      - name: Create rsync exclude file
+        run: |
+          cat > .deploy-ignore <<'EOF'
+          .git
+          .env
+          vendor/
+          node_modules/
+          storage/*.key
+          storage/framework/sessions
+          storage/framework/views
+          EOF
+
+      - name: Sync files to server
+        env:
+          SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          DEPLOY_PATH: ${{ secrets.PROD_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          PORT_ARG=""
+          if [ -n "${SSH_PORT:-}" ]; then
+            PORT_ARG="-e 'ssh -p $SSH_PORT -o StrictHostKeyChecking=no'"
+          fi
+          echo "Syncing repository to $SSH_USER@$SSH_HOST:$DEPLOY_PATH"
+          # Use rsync to transfer files efficiently
+          rsync -avz --delete --exclude-from='.deploy-ignore' ./ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH"
+
+      - name: Remote deploy commands
+        env:
+          SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          DEPLOY_PATH: ${{ secrets.PROD_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          SSH_OPTS="-o StrictHostKeyChecking=no"
+          if [ -n "${SSH_PORT:-}" ]; then SSH_OPTS="$SSH_OPTS -p ${SSH_PORT}"; fi
+
+          REMOTE_CMD=$(cat <<'REMOTE'
+          cd "${DEPLOY_PATH}"
+          # Use local composer.phar if present, otherwise run composer
+          if [ -f composer.phar ]; then
+            php composer.phar install --no-dev --optimize-autoloader
+          else
+            composer install --no-dev --optimize-autoloader || true
+          fi
+          php artisan migrate --force || true
+          php artisan config:cache || true
+          php artisan route:cache || true
+          REMOTE
+          )
+
+          echo "Running remote commands on $SSH_HOST"
+          ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "$REMOTE_CMD"
+
+      - name: Optional health check
+        if: always()
+        env:
+          HEALTH_URL: ${{ secrets.PROD_HEALTHCHECK_URL }}
+        run: |
+          if [ -z "${HEALTH_URL:-}" ]; then
+            echo "No PROD_HEALTHCHECK_URL set; skipping health check.";
+            exit 0;
+          fi
+          echo "Health check: $HEALTH_URL"
+          attempts=0
+          until [ $attempts -ge 5 ]
+          do
+            status=$(curl -s -o /dev/null -w "%{http_code}" -k "$HEALTH_URL" || echo "000")
+            echo "Attempt $((attempts+1)): HTTP $status"
+            if [ "$status" = "200" ]; then
+              echo "Health check passed.";
+              exit 0;
+            fi
+            attempts=$((attempts+1))
+            sleep $((2 ** attempts))
+          done
+          echo "Health check failed after 5 attempts.";
+          exit 1
