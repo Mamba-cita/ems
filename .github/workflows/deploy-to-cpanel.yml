@@ -20,19 +20,62 @@ jobs:
           CPANEL_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
           CPANEL_REPOSITORY_PATH: ${{ secrets.CPANEL_REPOSITORY_PATH }}
         run: |
+          set -euo pipefail
           if [ -z "$CPANEL_HOST" ] || [ -z "$CPANEL_USER" ] || [ -z "$CPANEL_TOKEN" ] || [ -z "$CPANEL_REPOSITORY_PATH" ]; then
             echo "Missing required CPANEL secrets. Please add CPANEL_HOST, CPANEL_USER, CPANEL_API_TOKEN and CPANEL_REPOSITORY_PATH to the repo Environment 'production' or repository Secrets.";
             exit 1;
           fi
 
-          # Call cPanel UAPI to deploy the HEAD commit for a repository
           echo "Calling cPanel UAPI on $CPANEL_HOST to deploy repository path: $CPANEL_REPOSITORY_PATH"
 
-          # Use HTTPS port 2083 (secure cPanel). The Authorization scheme for UAPI is: Authorization: cpanel user:APITOKEN
-          response=$(curl -s -k -G "https://$CPANEL_HOST:2083/execute/Git/deploy_head" --data-urlencode "repository=$CPANEL_REPOSITORY_PATH" -H "Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN")
+          # Call cPanel and capture response
+          response=$(curl -s -S -k -G "https://$CPANEL_HOST:2083/execute/Git/deploy_head" --data-urlencode "repository=$CPANEL_REPOSITORY_PATH" -H "Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN")
 
-          echo "cPanel response:"
+          echo "cPanel response (raw):"
           echo "$response"
+
+          # Parse response using jq (jq is available on ubuntu-latest runners)
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "jq is not installed on runner; cannot parse JSON response. Failing to be safe.";
+            exit 1;
+          fi
+
+          # Extract status and errors
+          status=$(echo "$response" | jq -r '.status // empty') || status=""
+          errors=$(echo "$response" | jq -r '.errors // empty') || errors=""
+          # Some UAPI responses include 'data' with status or messages
+          data_status=$(echo "$response" | jq -r '.data.status // empty' || true)
+
+          echo "parsed status: $status"
+          echo "parsed data.status: $data_status"
+          echo "parsed errors: $errors"
+
+          # Determine failure conditions
+          if [ "$status" = "1" ] || [ "$data_status" = "1" ]; then
+            echo "cPanel reported success.";
+          else
+            echo "cPanel reported failure. Failing workflow.";
+            echo "Full response: $response";
+            exit 1;
+          fi
+
+      - name: Optional health check (if CPANEL_HEALTHCHECK_URL is set)
+        if: success()
+        env:
+          HEALTH_URL: ${{ secrets.CPANEL_HEALTHCHECK_URL }}
+        run: |
+          if [ -z "${HEALTH_URL:-}" ]; then
+            echo "No CPANEL_HEALTHCHECK_URL secret set; skipping health check.";
+            exit 0;
+          fi
+          echo "Waiting 5s for deployed app to warm up..."
+          sleep 5
+          status_code=$(curl -s -o /dev/null -w "%{http_code}" -k "$HEALTH_URL")
+          echo "Health endpoint returned HTTP $status_code"
+          if [ "$status_code" -ne 200 ]; then
+            echo "Health check failed (non-200). Failing workflow.";
+            exit 1;
+          fi
 
       - name: Notify success
         if: success()
