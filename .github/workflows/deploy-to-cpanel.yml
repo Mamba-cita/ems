@@ -1,0 +1,39 @@
+name: Deploy to cPanel (Deploy HEAD Commit)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  deploy-to-cpanel:
+    name: Trigger cPanel Deploy
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trigger cPanel Deploy HEAD Commit via UAPI
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+          CPANEL_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          CPANEL_REPOSITORY_PATH: ${{ secrets.CPANEL_REPOSITORY_PATH }}
+        run: |
+          if [ -z "$CPANEL_HOST" ] || [ -z "$CPANEL_USER" ] || [ -z "$CPANEL_TOKEN" ] || [ -z "$CPANEL_REPOSITORY_PATH" ]; then
+            echo "Missing required CPANEL secrets. Please add CPANEL_HOST, CPANEL_USER, CPANEL_API_TOKEN and CPANEL_REPOSITORY_PATH to the repo Environment 'production' or repository Secrets.";
+            exit 1;
+          fi
+
+          # Call cPanel UAPI to deploy the HEAD commit for a repository
+          echo "Calling cPanel UAPI on $CPANEL_HOST to deploy repository path: $CPANEL_REPOSITORY_PATH"
+
+          # Use HTTPS port 2083 (secure cPanel). The Authorization scheme for UAPI is: Authorization: cpanel user:APITOKEN
+          response=$(curl -s -k -G "https://$CPANEL_HOST:2083/execute/Git/deploy_head" --data-urlencode "repository=$CPANEL_REPOSITORY_PATH" -H "Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN")
+
+          echo "cPanel response:"
+          echo "$response"
+
+      - name: Notify success
+        if: success()
+        run: echo "Deploy triggered on cPanel (check cPanel repository Deploy/Pull logs)."
