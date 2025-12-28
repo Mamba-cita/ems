@@ -11,6 +11,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: backend-skel
     services:
       mysql:
         image: mysql:8.0
@@ -30,7 +33,6 @@ jobs:
       DB_PASSWORD: ''
       APP_ENV: testing
       APP_DEBUG: 'true'
-
     steps:
       - uses: actions/checkout@v4
 
@@ -67,7 +69,7 @@ jobs:
       - name: Start Laravel server (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: .\scripts\start_laravel_server.ps1 -Host 127.0.0.1 -Port 8000 -ServerPath '.'
+        run: ..\backend\scripts\start_laravel_server.ps1 -Host 127.0.0.1 -Port 8000 -ServerPath '.'
 
       - name: Generate app key and migrate
         run: |
