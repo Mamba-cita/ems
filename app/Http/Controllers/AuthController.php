@@ -32,7 +32,10 @@ class AuthController extends Controller
 
         $token = $this->generateToken($created);
 
-        return response()->json(['success' => true, 'data' => ['token' => $token, 'user' => $created]]);
+        // create refresh token for register as well
+        $refresh = $this->createRefreshToken($created, $request->userAgent(), $request->ip());
+
+        return response()->json(['success' => true, 'data' => ['token' => $token, 'refresh_token' => $refresh->token, 'user' => $created]]);
     }
 
     public function login(Request $request)
@@ -64,7 +67,24 @@ class AuthController extends Controller
 
         $token = $this->generateToken($user);
 
-        return response()->json(['success' => true, 'data' => ['token' => $token, 'user' => $user]]);
+        // create refresh token
+        $refresh = $this->createRefreshToken($user, $request->userAgent(), $request->ip());
+
+        return response()->json(['success' => true, 'data' => ['token' => $token, 'refresh_token' => $refresh->token, 'user' => $user]]);
+    }
+
+    protected function createRefreshToken(User $user, $userAgent = null, $ip = null)
+    {
+        $token = bin2hex(random_bytes(32));
+        $expires = now()->addDays(30);
+        return \App\Models\RefreshToken::create([
+            'user_id' => $user->id,
+            'token' => $token,
+            'user_agent' => $userAgent,
+            'ip' => $ip,
+            'expires_at' => $expires,
+            'revoked' => false,
+        ]);
     }
 
     public function refresh(Request $request)
@@ -145,6 +165,47 @@ class AuthController extends Controller
         $user->save();
 
         return response()->json(['success' => true, 'data' => ['user' => $user]]);
+    }
+
+    public function requestPasswordReset(Request $request)
+    {
+        $v = Validator::make($request->all(), ['phone' => 'required_without:email', 'email' => 'required_without:phone']);
+        if ($v->fails()) return response()->json(['success' => false, 'errors' => $v->errors()], 422);
+
+        if ($request->has('phone')) {
+            $user = User::where('phone', $request->input('phone'))->first();
+        } else {
+            $user = User::where('email', $request->input('email'))->first();
+        }
+        if (!$user) return response()->json(['success' => false, 'message' => 'User not found'], 404);
+
+        $token = bin2hex(random_bytes(16));
+        $expires = now()->addHours(2);
+        $pr = \App\Models\PasswordReset::create(['user_id' => $user->id, 'token' => $token, 'expires_at' => $expires]);
+
+        // TODO: send SMS or email with the token
+
+        return response()->json(['success' => true, 'data' => ['token' => $token]]);
+    }
+
+    public function confirmPasswordReset(Request $request)
+    {
+        $v = Validator::make($request->all(), ['token' => 'required|string', 'password' => 'required|string|min:6']);
+        if ($v->fails()) return response()->json(['success' => false, 'errors' => $v->errors()], 422);
+
+        $pr = \App\Models\PasswordReset::where('token', $request->input('token'))->first();
+        if (!$pr || ($pr->expires_at && $pr->expires_at->isPast())) return response()->json(['success' => false, 'message' => 'Invalid or expired token'], 400);
+
+        $user = User::find($pr->user_id);
+        if (!$user) return response()->json(['success' => false, 'message' => 'User not found'], 404);
+
+        $user->password_hash = password_hash($request->input('password'), PASSWORD_BCRYPT);
+        $user->save();
+
+        // consume token
+        $pr->delete();
+
+        return response()->json(['success' => true]);
     }
 
     protected function generateToken(User $user)

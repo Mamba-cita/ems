@@ -1,0 +1,15 @@
+---
+deployment:
+  tasks:
+    # Change 'your_cpanel_user' to your actual cPanel username and adjust path if needed
+    - export DEPLOYPATH=/home/your_cpanel_user/public_html/
+    - echo "Deploying to $DEPLOYPATH"
+    - /bin/cp -R . $DEPLOYPATH
+    - cd $DEPLOYPATH
+    # Install PHP dependencies (tries common composer locations)
+    - php composer.phar install --no-dev --optimize-autoloader || composer install --no-dev --optimize-autoloader || true
+    # Laravel post-deploy steps (ignore failures if commands aren't available)
+    - php artisan migrate --force || true
+    - php artisan config:cache || true
+    - php artisan route:cache || true
+    - php artisan storage:link || true
