@@ -1,0 +1,60 @@
+name: security/scan
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run basic secret patterns scan
+        run: |
+          set -euo pipefail
+          echo "Scanning for high-confidence secrets..."
+
+          # Patterns: private keys, AWS keys, long base64 tokens, jwt secrets, possible passwords
+          patterns=(
+            "-----BEGIN OPENSSH PRIVATE KEY-----"
+            "-----BEGIN RSA PRIVATE KEY-----"
+            "AKIA[0-9A-Z]{16}"
+            "AIza[0-9A-Za-z_-]{35}"
+            "ghp_[A-Za-z0-9_]{36}"
+            "[A-Za-z0-9_-]{40,}")
+
+          exclude_paths=("vendor" "node_modules" "public" "storage" ".git")
+
+          GREP_EXCLUDE_ARGS=()
+          for p in "${exclude_paths[@]}"; do
+            GREP_EXCLUDE_ARGS+=(--exclude-dir="$p")
+          done
+
+          found=0
+          for patt in "${patterns[@]}"; do
+            echo "Checking pattern: $patt"
+            # Use grep to find instances, show filename:line
+            if grep -RIn --binary-files=without-match "${patt}" . "${GREP_EXCLUDE_ARGS[@]}"; then
+              found=1
+            fi
+          done
+
+          if [ "$found" -ne 0 ]; then
+            echo "Potential secrets detected - failing the scan. Please remove secrets and rotate." >&2
+            exit 1
+          fi
+
+          echo "No likely secrets found."
+
+      - name: Lint composer.lock for known advisories
+        run: |
+          if command -v composer >/dev/null 2>&1; then
+            composer audit || true
+          else
+            echo "composer not available, skipping composer audit"
+          fi
