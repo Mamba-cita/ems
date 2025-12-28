@@ -1,8 +1,7 @@
----
 deployment:
   tasks:
-    # Change 'your_cpanel_user' to your actual cPanel username and adjust path if needed
-    - export DEPLOYPATH=/home/your_cpanel_user/public_html/
+    # Updated with your actual username 'donking'
+    - export DEPLOYPATH=/home/donking/public_html/
     - echo "Deploying to $DEPLOYPATH"
     - /bin/cp -R . $DEPLOYPATH
     - cd $DEPLOYPATH
