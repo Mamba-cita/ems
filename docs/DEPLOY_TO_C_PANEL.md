@@ -8,10 +8,24 @@ Overview
 - Uses cPanel UAPI `Git::deploy_head` to request a HEAD deployment of the configured repository on the cPanel account.
 
 Required GitHub Secrets (recommended scope: Environment `production` secrets)
-- `CPANEL_HOST` — your cPanel host (e.g., `example.com`)
-- `CPANEL_USER` — your cPanel username (account that manages the repository)
+- `CPANEL_HOST` — your cPanel host (e.g., `host13.safaricombusiness.co.ke`)
+- `CPANEL_USER` — your cPanel username (account that manages the repository) — in your case: `donkingl`
 - `CPANEL_API_TOKEN` — an API token created in cPanel (see below)
-- `CPANEL_REPOSITORY_PATH` — the repository path as cPanel knows it, e.g. `/home/your_cpanel_user/repositories/ems` or the repository identifier shown in cPanel's Git Version Control UI
+- `CPANEL_REPOSITORY_PATH` — the repository path as cPanel knows it; for your repository: `/home/donkingl/ems-backend.donkinglogistics.co.ke` (use the exact path shown in cPanel)
+
+Example cURL tests you can run locally
+
+- Check token is valid (should return JSON):
+  curl -s -k -H "Authorization: cpanel DONKINGL_USER:YOUR_TOKEN" "https://host13.safaricombusiness.co.ke:2083/execute/Version"
+
+- List repositories and verify your repo path appears in output:
+  curl -s -k -G "https://host13.safaricombusiness.co.ke:2083/execute/Git/list_repositories" -H "Authorization: cpanel DONKINGL_USER:YOUR_TOKEN"
+
+- Trigger deploy manually (replace REPO_PATH with the exact path from list_repositories):
+  curl -s -k -G "https://host13.safaricombusiness.co.ke:2083/execute/Git/deploy_head" --data-urlencode "repository=/home/donkingl/ems-backend.donkinglogistics.co.ke" -H "Authorization: cpanel DONKINGL_USER:YOUR_TOKEN"
+
+Notes:
+- Replace DONKINGL_USER with your cPanel username `donkingl` and YOUR_TOKEN with the token you created in cPanel. Never paste the token in public logs.
 
 Create an API token in cPanel
 1. Log into cPanel as the account that owns the repository.

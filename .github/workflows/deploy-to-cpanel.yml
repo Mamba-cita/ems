@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Trigger cPanel Deploy HEAD Commit via UAPI
+      - name: Verify cPanel token and repository
         env:
           CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
           CPANEL_USER: ${{ secrets.CPANEL_USER }}
@@ -26,6 +26,38 @@ jobs:
             exit 1;
           fi
 
+          echo "Checking cPanel API token with /execute/Version on $CPANEL_HOST..."
+          version_resp=$(curl -s -S -k -H "Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN" "https://$CPANEL_HOST:2083/execute/Version" || true)
+          echo "Version response: $version_resp"
+
+          # Ensure we got JSON back
+          if ! echo "$version_resp" | grep -q '^\s*{' >/dev/null 2>&1; then
+            echo "Token test failed or non-JSON response returned (Access denied?)";
+            echo "Please recreate an API token in cPanel for user $CPANEL_USER and add it to GitHub Environment secrets as CPANEL_API_TOKEN.";
+            exit 1;
+          fi
+
+          # Check repositories list
+          echo "Listing repositories via cPanel UAPI..."
+          repos_resp=$(curl -s -S -k -G "https://$CPANEL_HOST:2083/execute/Git/list_repositories" -H "Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN" || true)
+          echo "Repositories response (raw): $repos_resp"
+
+          if echo "$repos_resp" | jq -e --arg path "$CPANEL_REPOSITORY_PATH" 'tostring | contains($path)' >/dev/null 2>&1; then
+            echo "Found repository path: $CPANEL_REPOSITORY_PATH"
+          else
+            echo "Repository path not found in cPanel list. Please ensure CPANEL_REPOSITORY_PATH matches the repository path shown in cPanel (example: /home/donkingl/ems-backend.donkinglogistics.co.ke).";
+            echo "Full repo list: $repos_resp";
+            exit 1;
+          fi
+
+      - name: Trigger cPanel Deploy HEAD Commit via UAPI
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+          CPANEL_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          CPANEL_REPOSITORY_PATH: ${{ secrets.CPANEL_REPOSITORY_PATH }}
+        run: |
+          set -euo pipefail
           echo "Calling cPanel UAPI on $CPANEL_HOST to deploy repository path: $CPANEL_REPOSITORY_PATH"
 
           # Call cPanel and capture response
