@@ -1,9 +1,23 @@
 name: Deploy to Server via SSH
 
 on:
-  push:
-    branches: [ main ]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      ssh_user:
+        description: 'SSH user for deploy (e.g., deploy)'
+        required: true
+      ssh_host:
+        description: 'SSH host (e.g., host13.safaricombusiness.co.ke)'
+        required: true
+      ssh_port:
+        description: 'SSH port (leave blank for default 22)'
+        required: false
+      deploy_path:
+        description: 'Absolute path on the server to deploy into'
+        required: true
+      health_url:
+        description: 'Optional healthcheck URL (https://example.com/health)'
+        required: false
 
 jobs:
   deploy:
@@ -32,12 +46,12 @@ jobs:
           storage/framework/views
           EOF
 
-      - name: Sync files to server
+      - name: Sync files to server (manual inputs)
         env:
-          SSH_USER: ${{ secrets.PROD_SSH_USER }}
-          SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
-          SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
-          DEPLOY_PATH: ${{ secrets.PROD_DEPLOY_PATH }}
+          SSH_USER: ${{ github.event.inputs.ssh_user }}
+          SSH_HOST: ${{ github.event.inputs.ssh_host }}
+          SSH_PORT: ${{ github.event.inputs.ssh_port }}
+          DEPLOY_PATH: ${{ github.event.inputs.deploy_path }}
         run: |
           set -euo pipefail
           PORT_ARG=""
@@ -48,12 +62,12 @@ jobs:
           # Use rsync to transfer files efficiently
           rsync -avz --delete --exclude-from='.deploy-ignore' ./ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH"
 
-      - name: Remote deploy commands
+      - name: Remote deploy commands (manual inputs)
         env:
-          SSH_USER: ${{ secrets.PROD_SSH_USER }}
-          SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
-          SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
-          DEPLOY_PATH: ${{ secrets.PROD_DEPLOY_PATH }}
+          SSH_USER: ${{ github.event.inputs.ssh_user }}
+          SSH_HOST: ${{ github.event.inputs.ssh_host }}
+          SSH_PORT: ${{ github.event.inputs.ssh_port }}
+          DEPLOY_PATH: ${{ github.event.inputs.deploy_path }}
         run: |
           set -euo pipefail
           SSH_OPTS="-o StrictHostKeyChecking=no"
@@ -79,10 +93,10 @@ jobs:
       - name: Optional health check
         if: always()
         env:
-          HEALTH_URL: ${{ secrets.PROD_HEALTHCHECK_URL }}
+          HEALTH_URL: ${{ github.event.inputs.health_url }}
         run: |
           if [ -z "${HEALTH_URL:-}" ]; then
-            echo "No PROD_HEALTHCHECK_URL set; skipping health check.";
+            echo "No health_url input set; skipping health check.";
             exit 0;
           fi
           echo "Health check: $HEALTH_URL"
