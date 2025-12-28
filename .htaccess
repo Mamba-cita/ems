@@ -1,0 +1,11 @@
+# Prevent directory listing and route requests to the real public folder
+Options -Indexes
+IndexIgnore *
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # Don't rewrite requests already pointing to /public
+  RewriteCond %{REQUEST_URI} !^/public/
+  # Forward everything to /public (preserve query string)
+  RewriteRule ^(.*)$ /public/$1 [L,QSA]
+</IfModule>
